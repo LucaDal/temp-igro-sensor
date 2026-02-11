@@ -4,4 +4,5 @@
 .vscode/launch.json
 .vscode/ipch
 .cache
-compile_commands.json
+compile_commands.jso
+secret_data.h
