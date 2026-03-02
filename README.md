@@ -23,5 +23,7 @@ Uncomment the lines (remove the leading `;`) in the `[env]` section to turn them
 
 ## Libraries included
 - **ArduinoJson**: JSON parsing and serialization.
+- **knolleary/PubSubClient@^2.8**: MQTT lib.
+- **sensirion/arduino-sht@^1.2.6**: SHT Sensor.
 
 Use these libraries directly in your firmware under `src/`, the dependencies are already declared in `platformio.ini`.
