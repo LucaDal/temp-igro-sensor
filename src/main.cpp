@@ -23,7 +23,7 @@ int updateTime;
 SHTSensor sht;
 
 void connectToMQTTBroker() {
-  int n_try = 5;
+  int n_try = 2;
   while (!mqtt.connected() && n_try > 0) {
     Serial.println("Connecting...");
     String client_id = "esp8266-" + String(WiFi.macAddress());
@@ -52,9 +52,10 @@ void update() {
   doc["umid"] = String(sht.getHumidity(), 0);
 #endif
   mqtt.publish(mqttTopic, doc.as<String>().c_str());
-  delay(500);
-  if (sleepTimeSec > 0)
-    ESP.deepSleep(sleepTimeSec);
+  LOGF("Publishing message: %s", doc.as<String>().c_str());
+  delay(100);
+  mqtt.disconnect();
+  ESP.deepSleep(sleepTimeSec);
 }
 
 void setup() {
@@ -84,7 +85,7 @@ void setup() {
     }
     mqttTopic = deviceProps.Get("topic");
     sleepTimeSec = deviceProps.GetInt("updateTime") * 1000000;
-    //min is 5 minutes
+    // min is 5 minutes
     sleepTimeSec = sleepTimeSec < 300e6 ? 300e6 : sleepTimeSec;
   }
 }
