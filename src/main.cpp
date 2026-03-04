@@ -15,33 +15,46 @@ MyDeviceProperties deviceProps;
 LiteWiFiManager wifiMgr;
 DeviceSetupManager setupMgr;
 MQTTManager mqtt;
-// 10 minutes
-const char *mqttTopic;
-int sleepTimeSec;
-int updateTime;
+String mqttTopic;
+uint64_t sleepTimeUs = 300000000ULL;
+bool runtimeConfigured = false;
 
 SHTSensor sht;
 
+constexpr int kMaxMqttConnectTries = 2;
+constexpr int kMqttRetryDelayMs = 1200;
+
 void connectToMQTTBroker() {
-  int n_try = 2;
+  if (WiFi.status() != WL_CONNECTED) {
+    LOG("WiFi not connected, skipping MQTT connect");
+    return;
+  }
+
+  int n_try = kMaxMqttConnectTries;
   while (!mqtt.connected() && n_try > 0) {
-    Serial.println("Connecting...");
     String client_id = "esp8266-" + String(WiFi.macAddress());
     if (mqtt.connect(client_id.c_str())) {
       LOG("Connected to MQTT broker");
       break;
     } else {
       LOGF("MQTT connect failed, rc=%d\n", mqtt.state());
-      delay(5000);
+      delay(kMqttRetryDelayMs);
     }
     n_try--;
-  } // parsing to microseconds
+  }
+
   if (n_try <= 0) {
-    ESP.deepSleep(sleepTimeSec);
+    LOG("MQTT connection retries exhausted, sleeping");
+    ESP.deepSleep(sleepTimeUs);
   }
 }
 
-void update() {
+bool publishSensorSample() {
+  if (!mqtt.connected()) {
+    LOG("Publish skipped: MQTT disconnected");
+    return false;
+  }
+
   JsonDocument doc;
 #ifdef DEBUG
   doc["temp"] = String(20.9, 1);
@@ -51,11 +64,24 @@ void update() {
   doc["temp"] = String(sht.getTemperature(), 1);
   doc["umid"] = String(sht.getHumidity(), 0);
 #endif
-  mqtt.publish(mqttTopic, doc.as<String>().c_str());
-  LOGF("Publishing message: %s", doc.as<String>().c_str());
-  delay(100);
+
+  String payload = doc.as<String>();
+  bool published = mqtt.publish(mqttTopic.c_str(), payload.c_str());
+  LOGF("Publishing message: %s\n", payload.c_str());
+  if (!published) {
+    LOGF("Publish failed, rc=%d\n", mqtt.state());
+  }
+
+  return published;
+}
+
+void update() {
+  publishSensorSample();
+  mqtt.loop();
+  delay(200);
   mqtt.disconnect();
-  ESP.deepSleep(sleepTimeSec);
+  delay(100);
+  ESP.deepSleep(sleepTimeUs);
 }
 
 void setup() {
@@ -83,14 +109,28 @@ void setup() {
                    deviceProps.GetInt("MQTT_PORT", 8883))) {
       connectToMQTTBroker();
     }
-    mqttTopic = deviceProps.Get("topic");
-    sleepTimeSec = deviceProps.GetInt("updateTime") * 1000000;
+    mqttTopic = deviceProps.Get("topic", "");
+    sleepTimeUs =
+        static_cast<uint64_t>(deviceProps.GetInt("updateTime", 300)) * 1000000ULL;
     // min is 5 minutes
-    sleepTimeSec = sleepTimeSec < 300e6 ? 300e6 : sleepTimeSec;
+    if (sleepTimeUs < 300000000ULL) {
+      sleepTimeUs = 300000000ULL;
+    }
+    runtimeConfigured = !mqttTopic.isEmpty();
   }
 }
 
 void loop() {
+  if (!runtimeConfigured) {
+    LOG("Runtime not configured, sleeping");
+    ESP.deepSleep(sleepTimeUs);
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    LOG("WiFi disconnected, sleeping");
+    ESP.deepSleep(sleepTimeUs);
+  }
+
   if (!mqtt.connected()) {
     connectToMQTTBroker();
   } else {
