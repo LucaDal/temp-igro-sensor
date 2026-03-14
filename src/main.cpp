@@ -32,7 +32,7 @@ void connectToMQTTBroker() {
 
   int n_try = kMaxMqttConnectTries;
   while (!mqtt.connected() && n_try > 0) {
-    String client_id = "esp8266-" + String(WiFi.macAddress());
+    String client_id = setupMgr.deviceId();
     if (mqtt.connect(client_id.c_str())) {
       LOG("Connected to MQTT broker");
       break;
@@ -98,10 +98,7 @@ void setup() {
     return;
   }
 
-  if (WiFi.status() == WL_CONNECTED && strlen(setupMgr.deviceId()) > 0 &&
-      strlen(setupMgr.deviceSecret()) > 0 &&
-      strlen(setupMgr.deviceTypeId()) > 0 &&
-      strlen(setupMgr.portalServerIp()) > 0) {
+  if (setupMgr.isProvisioningReady()) {
     deviceProps.begin(setupMgr.portalServerIp(), setupMgr.deviceId(),
                       setupMgr.deviceSecret());
     deviceProps.fetchAndStoreIfChanged();
@@ -111,7 +108,8 @@ void setup() {
     }
     mqttTopic = deviceProps.Get("topic", "");
     sleepTimeUs =
-        static_cast<uint64_t>(deviceProps.GetInt("updateTime", 300)) * 1000000ULL;
+        static_cast<uint64_t>(deviceProps.GetInt("updateTimeMin", 15)) * 60 *
+        1000000ULL;
     // min is 5 minutes
     if (sleepTimeUs < 300000000ULL) {
       sleepTimeUs = 300000000ULL;
